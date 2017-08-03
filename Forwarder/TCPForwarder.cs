@@ -13,21 +13,30 @@ namespace Forwarder
 
         // WARN WARN WARN
         public int CallCount { get; set; } = 0;
+        public int HandleCount { get; set; } = 0;
         public int ExceptionCount { get; set; } = 0;
         private int missCount = 0;
 
-        private void HandleWriteError(Exception cause, byte[] unsentMsg)
+        private void HandleWriteError(Exception cause, byte[] msg)
         {
-            if (!client.Connected)
+            // WARN WARN WARN
+            HandleCount++;
+
+            if (client == null || !client.Connected)
             {
-                client.Connect(hostname, port);
+                client?.Close();
+                client = null;
+                client = new TcpClient(hostname, port)
+                {
+                    SendTimeout = 2000 // 2 seconds
+                };
                 if (stream != null)
                 {
                     stream.Close();
                     stream = null;
                 }
                 stream = client.GetStream();
-                stream.Write(unsentMsg, 0, unsentMsg.Length);
+                stream.Write(msg, 0, msg.Length);
             }
         }
 
@@ -53,6 +62,7 @@ namespace Forwarder
             }
         }
 
+        // WARN (CEV): Make this class disposable!
         public void Close()
         {
             if (client != null)
@@ -69,11 +79,15 @@ namespace Forwarder
 
         public TCPForwarder(string hostname, int port)
         {
-            // TODO: Set send timeout
             this.port = port;
             this.hostname = hostname;
-            client = new TcpClient(hostname, port);
-            client.SendTimeout = 2000; // 2 Seconds
+            client = new TcpClient(hostname, port)
+            {
+
+                // WARN: Are there any other timeouts that
+                // we want to set - are there defaults???
+                SendTimeout = 2000 // 2 Seconds
+            };
         }
     }
 }

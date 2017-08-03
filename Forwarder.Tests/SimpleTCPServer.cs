@@ -12,7 +12,10 @@ namespace Forwarder.Tests
     public class SimpleTCPServer : IDisposable
     {
         public delegate void DatagramReceiveHandler(string data);
-        public bool crashy { get; set; }
+        public bool Crashy { get; set; }
+        public int CrashCount { get; set; } = 0;
+        public int HitCount { get; set; } = 0;
+
         private bool running = false;
         private bool disposed = false;
         private readonly DatagramReceiveHandler handler;
@@ -79,44 +82,64 @@ namespace Forwarder.Tests
             Dispose(true);
         }
 
+        private void StreamMessages()
+        {
+            int crashInterval = 1;
+            bool crashed = false;
+
+            TcpClient client = server.AcceptTcpClient();
+            NetworkStream stream = client.GetStream();
+
+            try
+            {
+                using (StreamReader sr = new StreamReader(stream, encoding))
+                {
+                    string line;
+                    while ((line = sr.ReadLine()) != null)
+                    {
+                        if (Crashy && crashInterval++ % 7 == 0)
+                        {
+                            crashed = true;
+                            CrashCount++;
+                            stream.Close();
+                            var xxx = sr.ReadToEnd();
+                            var yyy = xxx; // DEBUG THIS THING
+                            //break;
+                        }
+                        HitCount++;
+                        this.handler(line);
+                    }
+                }
+            }
+            catch (ObjectDisposedException ex)
+            {
+                if (!crashed)
+                {
+                    throw ex;
+                }
+                return;
+            }
+            catch (Exception ex)
+            {
+                throw ex; // here for debugging
+            }
+            finally
+            {
+                if (!crashed)
+                {
+                    client.Close();
+                }
+            }
+        }
+
         private void startServer()
         {
             try
             {
-                int crashInterval = 0;
                 server.Start();
-
-                byte[] buffer = new byte[4096];
-                List<byte> message = new List<byte>();
-
                 while (running)
                 {
-                    TcpClient client = server.AcceptTcpClient();
-                    NetworkStream stream = client.GetStream();
-                    
-                    // WARN: This is likely wrong when reading lines,
-                    // i.e. we should crash every X lines otherwise we
-                    // won't crash at all.
-                    //
-                    // Close the connection - crash
-                    if (crashy && crashInterval++ % 7 == 0)
-                    {
-                        stream.Close();
-                        client.Close();
-                        continue;
-                    }
-
-                    using (StreamReader sr = new StreamReader(stream, encoding))
-                    {
-                        string line;
-                        while ((line = sr.ReadLine()) != null)
-                        {
-                            this.handler(line);
-                        }
-                    }                    
-
-                    stream.Close();
-                    client.Close();
+                    StreamMessages();
                 }
             }
             catch (SocketException ex)
